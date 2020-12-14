@@ -15,7 +15,6 @@ type
 
     bitmaps: seq[uint]
     hashes: seq[Hash]
-    empty: seq[bool]
 
     overflow: seq[(Key, Val)]
 
@@ -25,13 +24,11 @@ proc removePos[Key, Val](t: var hopscotch[Key, Val], pos: uint, home: uint) {.in
 proc resize[Key, Val](t: var hopscotch[Key, Val], capacity: uint)
 func p2(num: uint): uint {.inline.}
 func fastMod(a: uint, b: uint): uint {.inline.}
+func isEmpty[Key, Val](t: hopscotch[Key, Val], idx: uint): bool {.inline.}
 
 proc initHopscotch*[Key, Val](capacity: uint = 16, lf: float32 = 0.75): hopscotch[Key, Val] =
   var capacity = p2 capacity
-  var empty = newSeq[bool](capacity)
   var hashes = newSeq[Hash](capacity)
-  for idx, emp in empty.pairs:
-    empty[idx] = true
   for idx, elem in hashes:
     hashes[idx] = -1
   return (loadFactor: lf,
@@ -41,16 +38,16 @@ proc initHopscotch*[Key, Val](capacity: uint = 16, lf: float32 = 0.75): hopscotc
   vals: newSeq[Key](capacity),
   bitmaps: newSeq[uint](capacity),
   hashes: hashes,
-  empty: empty,
   overflow: @[])
 
 proc put*[Key, Val](t: var hopscotch[Key, Val], key: Key, val: Val)  =
-  let hashInd = hash key
-  let ind = fastMod(uint hashInd, t.capacity)
   if float32(t.capacity) * t.loadFactor < float32(t.elements):
     t.resize(t.capacity * 2)
 
-  if t.empty[ind] or t.keys[ind] == key:
+  let hashInd = hash key
+  let ind = fastMod(uint hashInd, t.capacity)
+
+  if t.isEmpty(ind) or t.keys[ind] == key:
     t.setPos(ind, ind, key, val, hashInd)
   else:
     var posEmpty = ind
@@ -65,7 +62,7 @@ proc put*[Key, Val](t: var hopscotch[Key, Val], key: Key, val: Val)  =
             return
         t.overflow.add((key, val))
         return 
-      if t.empty[posEmpty]: break
+      if t.isEmpty(posEmpty): break
       inc posEmpty
     
     var check = int(posEmpty) - int(H - 1)
@@ -78,7 +75,7 @@ proc put*[Key, Val](t: var hopscotch[Key, Val], key: Key, val: Val)  =
       echo "dist to tot ", posEmpty - home
       echo "dis to move ", int(posEmpty) - check
       echo "testing ", distLeft >= int(posEmpty) - check
-      if t.empty[check] or int(posEmpty) - check >= distLeft:
+      if t.isEmpty(uint check) or int(posEmpty) - check >= distLeft:
         inc check
         continue
       
@@ -101,16 +98,15 @@ proc setPos[Key, Val](t: var hopscotch[Key, Val], pos: uint, home: uint, key: Ke
   echo "did we make it here?"
   t.bitmaps[home].setBit(uint8(pos - home))
   inc t.elements
-  t.empty[pos] = false
   t.hashes[pos] = hashInd
-  echo "inserted ", key, " at ind ", pos, " with home ", home, " and cap ", t.capacity
+  echo "inserted ", key, " at ind ", pos, " with home ", home, " and cap ", t.capacity, " and hash ", fastMod(uint hashInd, t.capacity)
 
 func find[Key, Val](t: hopscotch[Key, Val], key: Key): (Val, int, int) =
   let ind = fastMod(uint hash key, t.capacity)
   debugEcho "find ind ", ind
   # im pretty sure i dont have to worry about random init unlike in cpp
   debugEcho(ind, " ", t.capacity)
-  if t.keys[ind] == key and not t.empty[ind]:
+  if t.keys[ind] == key and not t.isEmpty(ind):
     return (t.vals[ind], int ind, int ind)
   else:
     var bits = t.bitmaps[ind]
@@ -120,7 +116,7 @@ func find[Key, Val](t: hopscotch[Key, Val], key: Key): (Val, int, int) =
       # apparently firstSetBit is 1-indexed
       let pos: uint = uint firstSetBit(bits) - 1
       debugEcho pos
-      if t.keys[ind + pos] == key and not t.empty[ind + pos]:
+      if t.keys[ind + pos] == key and not t.isEmpty(ind + pos):
         return (t.vals[ind + pos], int ind + pos, int ind)
       bits.clearBit(pos)
  
@@ -148,7 +144,6 @@ proc remove*[Key, Val](t: var hopscotch[Key, Val], key: Key) =
 
 proc removePos[Key, Val](t: var hopscotch[Key, Val], pos: uint, home: uint) {.inline.} =
   echo "removing pos ", pos
-  t.empty[pos] = true
   dec t.elements
   t.bitmaps[home].clearBit(pos - home)
   t.hashes[pos] = emptyHash
@@ -159,8 +154,8 @@ proc resize[Key, Val](t: var hopscotch[Key, Val], capacity: uint) =
   echo "capacity ", capacity
   var tmp = initHopscotch[Key, Val](capacity, t.loadFactor)
 
-  for idx, emp in t.empty:
-    if not emp:
+  for idx, h in t.hashes:
+    if h != -1:
       tmp.put(t.keys[idx], t.vals[idx])
   
   tmp.overflow = t.overflow
@@ -168,21 +163,21 @@ proc resize[Key, Val](t: var hopscotch[Key, Val], capacity: uint) =
   t = tmp
 
 proc clear*[Key, Val](t: var hopscotch[Key, Val]) =
-  for idx, emp in t.empty:
-    if not emp:
+  for idx, h in t.hashes:
+    if h != -1:
       t.removePos(idx, t.hashes[idx])
 
 iterator pairs*[Key, Val](t: hopscotch[Key, Val]): (Key, Val) =
-  for idx, emp in t.empty:
-    if not emp:
+  for idx, h in t.hashes:
+    if h != -1:
       yield (t.keys[idx], t.vals[idx])
 
 proc debug*[Key, Val](t: hopscotch[Key, Val]) =
   debugEcho("in debug")
-  for idx, emp in t.empty:
-    debugEcho(idx, " ", t.keys[idx], " ", t.vals[idx], " ", t.empty[idx])
+  for idx, h in t.hashes:
+    debugEcho(idx, " ", t.keys[idx], " ", t.vals[idx], " ", h == -1)
 
-func isEmpty[Key, Val](t: hopscotch[Key, Val], idx: uint): bool =
+func isEmpty[Key, Val](t: hopscotch[Key, Val], idx: uint): bool {.inline.} =
   t.hashes[idx] == emptyHash
 
 func p2(num: uint): uint {.inline.} =
