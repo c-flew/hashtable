@@ -5,12 +5,15 @@ const
   # there are no bits leftover to use for meta data like checking for empty/overflow
   H*: uint8 = sizeof(uint) * 8
 
-  # to indicated this bucket empty 
+  # hash to indicate a bucket is empty
   emptyHash: Hash = -1
+  
+  defaultSize: uint = 16
 
 type 
   hopscotch*[Key, Val] = tuple
-    loadFactor: float32
+    # (high, low)
+    loadFactor: (float32, float32)
     capacity: uint
     elements: uint
 
@@ -30,7 +33,7 @@ func p2(num: uint): uint {.inline.}
 func fastMod(a: uint, b: uint): uint {.inline.}
 func isEmpty[Key, Val](t: hopscotch[Key, Val], idx: uint): bool {.inline.}
 
-proc initHopscotch*[Key, Val](capacity: uint = 16, lf: float32 = 0.75): hopscotch[Key, Val] =
+proc initHopscotch*[Key, Val](capacity: uint = 16, lfHigh: float32 = 0.75, lfLow: float32 = 0.2): hopscotch[Key, Val] =
   # ensure capacity is power of 2 such that fastMod works
   var capacity = p2 capacity
 
@@ -40,7 +43,7 @@ proc initHopscotch*[Key, Val](capacity: uint = 16, lf: float32 = 0.75): hopscotc
   for idx, elem in hashes:
     hashes[idx] = emptyHash
 
-  return (loadFactor: lf,
+  return (loadFactor: (lfHigh, lfLow),
   capacity: capacity,
   elements: 0'u,
   keys: newSeq[Key](capacity),
@@ -50,7 +53,7 @@ proc initHopscotch*[Key, Val](capacity: uint = 16, lf: float32 = 0.75): hopscotc
   overflow: @[])
 
 proc put*[Key, Val](t: var hopscotch[Key, Val], key: Key, val: Val)  =
-  if float32(t.capacity) * t.loadFactor < float32(t.elements):
+  if float32(t.capacity) * t.loadFactor[0] < float32(t.elements):
     t.resize(t.capacity * 2)
 
   let hashInd = hash key
@@ -81,7 +84,7 @@ proc put*[Key, Val](t: var hopscotch[Key, Val], key: Key, val: Val)  =
     # until it was too late
     # TODO: rethink number type choices
     var check = int(posEmpty) - int(H - 1)
-    while int(posEmpty) - int(ind) > int(H):
+    while int(posEmpty) - int(ind) >= int(H):
       let home = fastMod(uint t.hashes[check], t.capacity)
       let distLeft = (int(H) - 1) - (check - int home)
       if t.isEmpty(uint check) or int(posEmpty) - check >= distLeft:
@@ -155,6 +158,9 @@ proc remove*[Key, Val](t: var hopscotch[Key, Val], key: Key) =
     else:
       t.overflow.delete(ind)
 
+  if t.capacity > defaultSize and float32(t.elements) < float32(t.capacity) * t.loadFactor[1]:
+    t.resize(uint rotateRightBits(t.capacity, 1))
+
 proc removePos[Key, Val](t: var hopscotch[Key, Val], pos: uint, home: uint) {.inline.} =
   # key and val dont need to be cleared
   dec t.elements
@@ -168,7 +174,7 @@ proc resize[Key, Val](t: var hopscotch[Key, Val], capacity: uint) =
   # t.resize(t.capacity * 2)
   # since this method isnt exposed to the user it shouldnt matter
   # and it makes it a tad more convenient for me
-  var tmp = initHopscotch[Key, Val](capacity, t.loadFactor)
+  var tmp = initHopscotch[Key, Val](capacity, t.loadFactor[0], t.loadFactor[1])
 
   for idx, h in t.hashes:
     if h != emptyHash:
@@ -207,5 +213,5 @@ func p2(num: uint): uint {.inline.} =
 func fastMod(a: uint, b: uint): uint {.inline.} =
   a and (b - 1)
 
-func elem*[Key, Val](t: hopscotch[Key, Val]): int =
+func elem*[Key, Val](t: hopscotch[Key, Val]): int {.inline.} =
   int(t.elements) + t.overflow.len
