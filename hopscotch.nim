@@ -122,6 +122,8 @@ func find[Key, Val](t: hopscotch[Key, Val], key: Key): (Val, int, int) =
     # by counting the leading zeroes and then clearing that bit
     # this might improve performance on x64 cpus due to the bsr instruction
     # but I am not sure about performance on arm due to a lack of an equivalent instruction
+    # also this approach might get beat by compiler optimizations
+    # and thus this is likely a slower approach
     # TODO: benchmark this vs linear probing
 
     var bits = t.bitmaps[ind]
@@ -192,6 +194,13 @@ iterator pairs*[Key, Val](t: hopscotch[Key, Val]): (Key, Val) =
   for idx, h in t.hashes:
     if h != emptyHash:
       yield (t.keys[idx], t.vals[idx])
+
+proc toHopscotch*[Key, Val](pairs: openArray[(Key, Val)]): hopscotch[Key, Val] =
+  result = initHopscotch[Key, Val]()
+
+  for (k, v) in pairs:
+    result.put(k, v)
+
 
 proc debug*[Key, Val](t: hopscotch[Key, Val]) =
   debugEcho("in debug")
