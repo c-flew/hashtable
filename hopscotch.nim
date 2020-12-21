@@ -32,6 +32,7 @@ proc resize[Key, Val](t: var hopscotch[Key, Val], capacity: uint)
 func p2(num: uint): uint {.inline.}
 func fastMod(a: uint, b: uint): uint {.inline.}
 func isEmpty[Key, Val](t: hopscotch[Key, Val], idx: uint): bool {.inline.}
+func lsb(mask: uint): int {.inline.}
 
 proc initHopscotch*[Key, Val](capacity: uint = 16, lfHigh: float32 = 0.75, lfLow: float32 = 0.2): hopscotch[Key, Val] =
   # ensure capacity is power of 2 such that fastMod works
@@ -130,8 +131,7 @@ func find[Key, Val](t: hopscotch[Key, Val], key: Key): (Val, int, int) =
     # dont recheck home bucked
     bits.clearBit(0)
     while bits != 0:
-      # firstSetBit is 1-indexed
-      let pos: uint = uint firstSetBit(bits) - 1
+      let pos: uint = uint lsb bits
       if t.keys[ind + pos] == key and not t.isEmpty(ind + pos):
         return (t.vals[ind + pos], int ind + pos, int ind)
       bits.clearBit(pos)
@@ -210,6 +210,10 @@ proc debug*[Key, Val](t: hopscotch[Key, Val]) =
 func isEmpty[Key, Val](t: hopscotch[Key, Val], idx: uint): bool {.inline.} =
   # Using unhashed hashes replaces the need for seq to check empty buckets
   t.hashes[idx] == emptyHash
+
+# this doesnt work if mask = 0, but that is already checked in find
+func lsb(mask: uint): int =
+  63 - countLeadingZeroBits(mask)
 
 # see:
 # https://jameshfisher.com/2018/03/30/round-up-power-2/ 
