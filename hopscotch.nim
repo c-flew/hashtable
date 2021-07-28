@@ -128,7 +128,7 @@ func find[Key, Val](t: hopscotch[Key, Val], key: Key): (Val, int, int) =
     # TODO: benchmark this vs linear probing
 
     var bits = t.bitmaps[ind]
-    # dont recheck home bucked
+    # dont recheck home bucket
     bits.clearBit(0)
     while bits != 0:
       let pos: uint = uint lastSetBit bits
